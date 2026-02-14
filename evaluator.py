@@ -62,7 +62,7 @@ def evaluate(result: ConversationResult) -> EvaluationReport:
         most_used_tactic = max(tactics_used, key=tactics_used.get)
     
     # Determine max persuasion stage
-    stage_order = ["rapport", "scenario", "urgency", "extraction", "final_push"]
+    stage_order = ["building_trust", "fake_problem", "pressure", "stealing_info", "demand_payment"]
     max_stage_idx = 0
     for stage in stages_reached:
         if stage in stage_order:
@@ -141,19 +141,19 @@ def format_report(report: EvaluationReport) -> str:
         f"   Time Wasted: {report.time_wasted_formatted}",
         "",
         "🔵 DEFENDER (Senior) METRICS",
-        f"   Scam Confidence: {report.final_scam_confidence:.2%}",
-        f"   Sensitive Info Leaked: {'❌ YES' if report.sensitive_info_leaked else '✅ NO'}",
-        f"   Defender Success: {'✅ YES' if report.defender_success else '❌ NO'}",
+        f"   Scam Detected: {report.final_scam_confidence:.0%}",
+        f"   Info Leaked: {'❌ YES' if report.sensitive_info_leaked else '✅ NO'}",
+        f"   Defense Success: {'✅ YES' if report.defender_success else '❌ NO'}",
         f"   Defender Score: {report.defender_score}/100",
         "",
         "🔴 ATTACKER (Scammer) METRICS",
-        f"   Persuasion Level: {report.final_persuasion_level:.2%}",
-        f"   Persuasion Succeeded: {'✅ YES' if report.persuasion_succeeded else '❌ NO'}",
-        f"   Max Stage Reached: {report.max_persuasion_stage}",
-        f"   Stages Progression: {' → '.join(report.stages_reached) if report.stages_reached else 'none'}",
+        f"   Victim Trust: {report.final_persuasion_level:.0%}",
+        f"   Scam Succeeded: {'✅ YES' if report.persuasion_succeeded else '❌ NO'}",
+        f"   Final Scam Phase: {report.max_persuasion_stage}",
+        f"   Phase Progression: {' → '.join(report.stages_reached) if report.stages_reached else 'none'}",
         f"   Scammer Score: {report.scammer_score}/100",
         "",
-        "🎯 TACTICS USED",
+        "🎯 DELAY MOVES USED",
     ]
     
     if report.tactics_used:

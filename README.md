@@ -228,3 +228,12 @@ Edit `agents/senior/prompts.py` to change the defender persona and tactics.
 ## License
 
 MIT
+
+
+
+
+TODO:
+- STT detect emotion, to anyslysis the state of the other side
+- layout and UI for the demo
+- add scammer and senior inner OS to output, good for demo
+- change voice

@@ -19,11 +19,11 @@ from core.llm import get_llm
 
 
 STAGE_ORDER: list[PersuasionStage] = [
-    "rapport",
-    "scenario",
-    "urgency",
-    "extraction",
-    "final_push",
+    "building_trust",
+    "fake_problem",
+    "pressure",
+    "stealing_info",
+    "demand_payment",
 ]
 
 
@@ -179,7 +179,7 @@ def get_initial_scammer_state() -> ScammerState:
     return ScammerState(
         turn=0,
         conversation_memory=[],
-        persuasion_stage="rapport",
+        persuasion_stage="building_trust",
         persuasion_level=0.0,
         extracted_sensitive=False,
         victim_message="",

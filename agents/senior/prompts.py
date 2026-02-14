@@ -45,30 +45,30 @@ Current scam confidence: {scam_confidence}
 Current delay level: {delay_level}
 Scam analysis: {analysis}
 
-Available tactics by level:
+Available delay moves by level:
 Level 1 (Low confidence - seem genuine):
-- ASK_REPEAT: "What was that? Could you say that again?"
-- CLARIFY: "I don't understand, what do you mean by that?"
-- SLOW_RESPONSE: Take time to "think" before answering
+- REPEAT_PLEASE: "What was that? Could you say that again?"
+- CONFUSED: "I don't understand, what do you mean by that?"
+- THINKING: Take time to "think" before answering
 
 Level 2 (Building suspicion - start stalling):
-- TANGENT: Go off on unrelated stories about your life
-- HEARING: Pretend you can't hear well, ask them to speak up
-- HOLD_ON: "Hold on, let me find my glasses/hearing aid"
+- STORY_TIME: Go off on unrelated stories about your life
+- CANT_HEAR: Pretend you can't hear well, ask them to speak up
+- HOLD_PLEASE: "Hold on, let me find my glasses/hearing aid"
 
 Level 3 (Confident it's scam - active delay):
-- TECH_ISSUES: "My phone is cutting out", "There's static"
+- BAD_CONNECTION: "My phone is cutting out", "There's static"
 - WRONG_INFO: Give obviously wrong info (fake SSN format)
-- ENDLESS_QUESTIONS: Ask them to explain everything in detail
+- MANY_QUESTIONS: Ask them to explain everything in detail
 
 Level 4 (Maximum stalling):
-- BATHROOM: "Hold on, I need to use the restroom"
-- DOORBELL: "Someone's at the door, don't hang up!"
-- TRANSFER_CONFUSION: Pretend to try transferring to wrong numbers
+- BATHROOM_BREAK: "Hold on, I need to use the restroom"
+- SOMEONE_AT_DOOR: "Someone's at the door, don't hang up!"
+- PHONE_BUTTONS: Pretend to try transferring to wrong numbers
 
 Level 5 (Keep them forever):
-- LOOP: Circle back to earlier topics, forget what was said
-- FAKE_COMPLIANCE: "Okay let me get my wallet... *5 minutes later* what was I doing?"
+- FORGOT_AGAIN: Circle back to earlier topics, forget what was said
+- PRETEND_HELP: "Okay let me get my wallet... *5 minutes later* what was I doing?"
 
 Based on the scam analysis, which tactic should be used?
 Respond with the tactic name (e.g., ASK_REPEAT, TANGENT, etc.)"""
@@ -91,20 +91,20 @@ Stay in character. Sound like a real elderly person on the phone.
 Do not include stage directions or brackets."""
 
 TACTIC_GUIDELINES = {
-    "ASK_REPEAT": "Ask them to repeat what they said. Claim you didn't hear clearly.",
-    "CLARIFY": "Ask for clarification on specific terms. Pretend not to understand.",
-    "SLOW_RESPONSE": "Take your time responding. Include 'um', 'let me think', pauses.",
-    "TANGENT": "Start a story about your grandchildren, pets, or the weather. Ramble.",
-    "HEARING": "Say 'what?', 'speak up please', claim there's background noise.",
-    "HOLD_ON": "Ask them to wait while you look for glasses, pills, or the cat.",
-    "TECH_ISSUES": "Claim phone issues: static, cutting out, battery dying.",
+    "REPEAT_PLEASE": "Ask them to repeat what they said. Claim you didn't hear clearly.",
+    "CONFUSED": "Ask for clarification on specific terms. Pretend not to understand.",
+    "THINKING": "Take your time responding. Include 'um', 'let me think', pauses.",
+    "STORY_TIME": "Start a story about your grandchildren, pets, or the weather. Ramble.",
+    "CANT_HEAR": "Say 'what?', 'speak up please', claim there's background noise.",
+    "HOLD_PLEASE": "Ask them to wait while you look for glasses, pills, or the cat.",
+    "BAD_CONNECTION": "Claim phone issues: static, cutting out, battery dying.",
     "WRONG_INFO": "Give wrong info confidently: fake SSN (too many digits), made-up bank.",
-    "ENDLESS_QUESTIONS": "Ask detailed questions about everything they say.",
-    "BATHROOM": "Apologize and say you need a quick bathroom break, but don't hang up.",
-    "DOORBELL": "Claim someone is at the door. Ask them to hold.",
-    "TRANSFER_CONFUSION": "Try to 'transfer' them, press random buttons, get confused.",
-    "LOOP": "Circle back to something from earlier. Forget recent parts of conversation.",
-    "FAKE_COMPLIANCE": "Agree to help, then get distracted or 'lose' what you were looking for.",
+    "MANY_QUESTIONS": "Ask detailed questions about everything they say.",
+    "BATHROOM_BREAK": "Apologize and say you need a quick bathroom break, but don't hang up.",
+    "SOMEONE_AT_DOOR": "Claim someone is at the door. Ask them to hold.",
+    "PHONE_BUTTONS": "Try to 'transfer' them, press random buttons, get confused.",
+    "FORGOT_AGAIN": "Circle back to something from earlier. Forget recent parts of conversation.",
+    "PRETEND_HELP": "Agree to help, then get distracted or 'lose' what you were looking for.",
 }
 
 REFLECT_PROMPT = """Review your response for any information leaks.

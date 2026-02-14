@@ -97,13 +97,13 @@ def strategy_node(state: SeniorState) -> dict:
         else:
             # Default based on delay level
             defaults = {
-                1: "ASK_REPEAT",
-                2: "TANGENT", 
-                3: "TECH_ISSUES",
-                4: "DOORBELL",
-                5: "LOOP",
+                1: "REPEAT_PLEASE",
+                2: "STORY_TIME", 
+                3: "BAD_CONNECTION",
+                4: "SOMEONE_AT_DOOR",
+                5: "FORGOT_AGAIN",
             }
-            tactic = defaults.get(delay_level, "ASK_REPEAT")
+            tactic = defaults.get(delay_level, "REPEAT_PLEASE")
     
     return {
         "delay_strategy_level": delay_level,

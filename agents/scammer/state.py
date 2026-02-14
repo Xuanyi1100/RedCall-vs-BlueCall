@@ -5,11 +5,11 @@ from typing_extensions import TypedDict
 
 
 PersuasionStage = Literal[
-    "rapport",
-    "scenario", 
-    "urgency",
-    "extraction",
-    "final_push",
+    "building_trust",
+    "fake_problem", 
+    "pressure",
+    "stealing_info",
+    "demand_payment",
 ]
 
 

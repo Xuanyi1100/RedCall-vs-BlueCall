@@ -116,8 +116,8 @@ class Orchestrator:
             
             if verbose:
                 print(f"\n🔴 Scammer: {scammer_message}")
-                print(f"   [Stage: {self._scammer_state['persuasion_stage']}, "
-                      f"Persuasion: {self._scammer_state['persuasion_level']:.2f}]")
+                print(f"   [Scam Phase: {self._scammer_state['persuasion_stage']}, "
+                      f"Victim Trust: {self._scammer_state['persuasion_level']:.0%}]")
                 if scammer_audio_path:
                     print(f"   🔊 Audio: {scammer_audio_path}")
             
@@ -157,8 +157,8 @@ class Orchestrator:
             
             if verbose:
                 print(f"\n🔵 Senior: {senior_message}")
-                print(f"   [Confidence: {self._senior_state['scam_confidence']:.2f}, "
-                      f"Tactic: {self._senior_state['current_tactic']}]")
+                print(f"   [Scam Detected: {self._senior_state['scam_confidence']:.0%}, "
+                      f"Delay Move: {self._senior_state['current_tactic']}]")
                 if senior_audio_path:
                     print(f"   🔊 Audio: {senior_audio_path}")
             

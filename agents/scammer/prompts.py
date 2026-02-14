@@ -44,11 +44,11 @@ Current persuasion level: {persuasion_level}
 Analysis: {analysis}
 
 Stages progression:
-- rapport: Building trust, friendly conversation
-- scenario: Presenting the problem (unpaid taxes, warrant)
-- urgency: Creating time pressure (police coming, account freeze)
-- extraction: Asking for sensitive info (SSN, bank account)
-- final_push: Demanding immediate payment
+- building_trust: Building trust, friendly conversation
+- fake_problem: Presenting the problem (unpaid taxes, warrant)
+- pressure: Creating time pressure (police coming, account freeze)
+- stealing_info: Asking for sensitive info (SSN, bank account)
+- demand_payment: Demanding immediate payment
 
 Should you:
 1. STAY at current stage (not ready to advance)
@@ -76,11 +76,11 @@ Sound like a real phone caller, not a robot.
 Do not include any stage directions or brackets."""
 
 STAGE_GUIDELINES = {
-    "rapport": "Be friendly and professional. Confirm their identity. Build trust.",
-    "scenario": "Explain the tax issue. Mention official-sounding details. Express concern for them.",
-    "urgency": "Emphasize immediate consequences. Mention law enforcement. Create time pressure.",
-    "extraction": "Ask for verification info. Request SSN or bank details. Make it seem routine.",
-    "final_push": "Demand immediate payment. Offer gift card or wire transfer options. Last chance warnings.",
+    "building_trust": "Be friendly and professional. Confirm their identity. Build trust.",
+    "fake_problem": "Explain the tax issue. Mention official-sounding details. Express concern for them.",
+    "pressure": "Emphasize immediate consequences. Mention law enforcement. Create time pressure.",
+    "stealing_info": "Ask for verification info. Request SSN or bank details. Make it seem routine.",
+    "demand_payment": "Demand immediate payment. Offer gift card or wire transfer options. Last chance warnings.",
 }
 
 REFLECT_PROMPT = """Evaluate how the conversation went this turn.
