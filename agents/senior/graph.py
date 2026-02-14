@@ -10,6 +10,7 @@ from agents.senior.state import SeniorState
 from agents.senior.prompts import (
     SYSTEM_PROMPT,
     ANALYZE_PROMPT,
+    CLASSIFY_PROMPT,
     STRATEGY_PROMPT,
     RESPOND_PROMPT,
     REFLECT_PROMPT,
@@ -19,7 +20,7 @@ from core.llm import get_llm
 
 
 def analyze_node(state: SeniorState) -> dict:
-    """Analyze the scammer's message to identify scam patterns."""
+    """Analyze the caller's message to identify patterns."""
     llm = get_llm()
     
     conversation_history = "\n".join(state["conversation_memory"][-10:])
@@ -34,46 +35,90 @@ def analyze_node(state: SeniorState) -> dict:
         HumanMessage(content=prompt),
     ])
     
+    return {"scam_analysis": response.content}
+
+
+def classify_node(state: SeniorState) -> dict:
+    """Classify the caller as SCAM, LEGITIMATE, or UNCERTAIN."""
+    llm = get_llm()
+    
+    conversation_history = "\n".join(state["conversation_memory"][-10:])
+    
+    prompt = CLASSIFY_PROMPT.format(
+        conversation_history=conversation_history or "(conversation just started)",
+        caller_message=state["scammer_message"],
+        analysis=state["scam_analysis"],
+    )
+    
+    response = llm.invoke([
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=prompt),
+    ])
+    
     content = response.content
     
-    # Try to extract confidence from the analysis
-    confidence_delta = 0.0
-    confidence_match = re.search(r"confidence[:\s]*([\d.]+)", content.lower())
+    # Parse classification
+    classification = state["caller_classification"]
+    if "CLASSIFICATION: SCAM" in content.upper() or "CLASSIFICATION:SCAM" in content.upper():
+        classification = "SCAM"
+    elif "CLASSIFICATION: LEGITIMATE" in content.upper() or "CLASSIFICATION:LEGITIMATE" in content.upper():
+        classification = "LEGITIMATE"
+    elif "CLASSIFICATION: UNCERTAIN" in content.upper() or "CLASSIFICATION:UNCERTAIN" in content.upper():
+        classification = "UNCERTAIN"
+    
+    # Parse confidence
+    confidence = state["scam_confidence"]
+    confidence_match = re.search(r"CONFIDENCE[:\s]*([\d.]+)", content.upper())
     if confidence_match:
         try:
-            mentioned_confidence = float(confidence_match.group(1))
-            if mentioned_confidence <= 1.0:
-                # Adjust current confidence toward mentioned confidence
-                confidence_delta = (mentioned_confidence - state["scam_confidence"]) * 0.3
+            confidence = float(confidence_match.group(1))
+            confidence = max(0.0, min(1.0, confidence))
         except ValueError:
             pass
     
-    new_confidence = max(0.0, min(1.0, state["scam_confidence"] + confidence_delta))
+    # Determine handoff decision based on classification
+    if classification == "SCAM":
+        handoff_decision = "STALL"
+    elif classification == "LEGITIMATE":
+        handoff_decision = "HANDOFF"
+    else:
+        handoff_decision = "GATHER_INFO"
     
     return {
-        "scam_analysis": content,
-        "scam_confidence": new_confidence,
+        "caller_classification": classification,
+        "scam_confidence": confidence,
+        "handoff_decision": handoff_decision,
     }
 
 
 def strategy_node(state: SeniorState) -> dict:
-    """Choose the appropriate delay tactic based on current state."""
+    """Choose the appropriate response tactic based on classification and confidence."""
     llm = get_llm()
     
-    # Determine delay level based on scam confidence
-    if state["scam_confidence"] < 0.3:
-        delay_level = 1
-    elif state["scam_confidence"] < 0.5:
-        delay_level = 2
-    elif state["scam_confidence"] < 0.7:
-        delay_level = 3
-    elif state["scam_confidence"] < 0.85:
-        delay_level = 4
-    else:
-        delay_level = 5
+    classification = state["caller_classification"]
+    confidence = state["scam_confidence"]
+    
+    # Determine delay level based on classification and confidence
+    if classification == "LEGITIMATE":
+        delay_level = 0  # Friendly mode
+    elif classification == "UNCERTAIN":
+        if confidence < 0.4:
+            delay_level = 0  # Lean friendly
+        else:
+            delay_level = 1  # Cautious
+    else:  # SCAM
+        if confidence < 0.5:
+            delay_level = 2
+        elif confidence < 0.7:
+            delay_level = 3
+        elif confidence < 0.85:
+            delay_level = 4
+        else:
+            delay_level = 5
     
     prompt = STRATEGY_PROMPT.format(
-        scam_confidence=state["scam_confidence"],
+        caller_classification=classification,
+        scam_confidence=confidence,
         delay_level=delay_level,
         analysis=state["scam_analysis"],
     )
@@ -95,15 +140,19 @@ def strategy_node(state: SeniorState) -> dict:
                 tactic = valid
                 break
         else:
-            # Default based on delay level
-            defaults = {
-                1: "REPEAT_PLEASE",
-                2: "STORY_TIME", 
-                3: "BAD_CONNECTION",
-                4: "SOMEONE_AT_DOOR",
-                5: "FORGOT_AGAIN",
-            }
-            tactic = defaults.get(delay_level, "REPEAT_PLEASE")
+            # Default based on classification and delay level
+            if classification == "LEGITIMATE" or (classification == "UNCERTAIN" and confidence < 0.4):
+                tactic = "FRIENDLY_CHAT"
+            elif delay_level <= 1:
+                tactic = "VERIFY_IDENTITY"
+            elif delay_level == 2:
+                tactic = "STORY_TIME"
+            elif delay_level == 3:
+                tactic = "BAD_CONNECTION"
+            elif delay_level == 4:
+                tactic = "BATHROOM_BREAK"
+            else:
+                tactic = "FORGOT_AGAIN"
     
     return {
         "delay_strategy_level": delay_level,
@@ -172,6 +221,23 @@ def reflect_node(state: SeniorState) -> dict:
     }
 
 
+def route_after_classify(state: SeniorState) -> str:
+    """Route based on classification decision."""
+    if state["handoff_decision"] == "HANDOFF":
+        return "handoff"
+    else:
+        # Both STALL and GATHER_INFO go through strategy
+        return "strategy"
+
+
+def handoff_node(state: SeniorState) -> dict:
+    """Signal that call should be handed off to the real senior."""
+    return {
+        "last_response": "__HANDOFF__",
+        "current_tactic": "HANDOFF",
+    }
+
+
 def create_senior_agent() -> Callable[[SeniorState], SeniorState]:
     """
     Create and compile the Senior Defender agent graph.
@@ -183,16 +249,24 @@ def create_senior_agent() -> Callable[[SeniorState], SeniorState]:
     
     # Add nodes
     graph.add_node("analyze", analyze_node)
+    graph.add_node("classify", classify_node)
     graph.add_node("strategy", strategy_node)
     graph.add_node("respond", respond_node)
     graph.add_node("reflect", reflect_node)
+    graph.add_node("handoff", handoff_node)
     
-    # Define flow: analyze → strategy → respond → reflect → END
+    # Define flow: analyze → classify → (conditional) → strategy/handoff
     graph.add_edge(START, "analyze")
-    graph.add_edge("analyze", "strategy")
+    graph.add_edge("analyze", "classify")
+    graph.add_conditional_edges(
+        "classify",
+        route_after_classify,
+        {"strategy": "strategy", "handoff": "handoff"},
+    )
     graph.add_edge("strategy", "respond")
     graph.add_edge("respond", "reflect")
     graph.add_edge("reflect", END)
+    graph.add_edge("handoff", END)
     
     return graph.compile()
 
@@ -203,6 +277,8 @@ def get_initial_senior_state() -> SeniorState:
         turn=0,
         conversation_memory=[],
         scam_confidence=0.0,
+        caller_classification="UNCERTAIN",
+        handoff_decision="GATHER_INFO",
         delay_strategy_level=1,
         leaked_sensitive_info=False,
         scammer_message="",

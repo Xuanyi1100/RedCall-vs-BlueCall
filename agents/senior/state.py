@@ -1,7 +1,14 @@
 """State definition for the Senior Defender agent."""
 
-from typing import List
+from typing import List, Literal
 from typing_extensions import TypedDict
+
+
+# Classification of caller type
+CallerClassification = Literal["SCAM", "LEGITIMATE", "UNCERTAIN"]
+
+# Decision on what to do with the call
+HandoffDecision = Literal["STALL", "HANDOFF", "GATHER_INFO"]
 
 
 class SeniorState(TypedDict):
@@ -19,6 +26,12 @@ class SeniorState(TypedDict):
     
     # Confidence that this is a scam (0.0 to 1.0)
     scam_confidence: float
+    
+    # Classification of the caller (SCAM, LEGITIMATE, UNCERTAIN)
+    caller_classification: CallerClassification
+    
+    # Decision on how to handle the call (STALL, HANDOFF, GATHER_INFO)
+    handoff_decision: HandoffDecision
     
     # Current delay strategy level (1-5, escalating tactics)
     # 1: Polite confusion, asking to repeat

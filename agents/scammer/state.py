@@ -35,6 +35,19 @@ class ScammerState(TypedDict):
     # Whether sensitive info has been extracted from victim
     extracted_sensitive: bool
     
+    # Patience level (1.0 = full patience, 0.0 = give up)
+    # Decays when victim keeps stalling without providing info
+    patience: float
+    
+    # Count of consecutive turns with no progress
+    frustration_turns: int
+    
+    # Whether scammer decided to give up and hang up
+    gave_up: bool
+    
+    # Frustrated message when giving up (generated when patience runs out)
+    give_up_message: str
+    
     # The last message from the victim (input)
     victim_message: str
     

@@ -234,6 +234,12 @@ MIT
 
 TODO:
 - STT detect emotion, to anyslysis the state of the other side
+- Senior agent should allow people to step in and take over the call
+- use smallest.ai api integration more
+
+
 - layout and UI for the demo
 - add scammer and senior inner OS to output, good for demo
 - change voice
+
+

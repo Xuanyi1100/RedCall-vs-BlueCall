@@ -13,6 +13,7 @@ from agents.scammer.prompts import (
     ESCALATE_PROMPT,
     RESPOND_PROMPT,
     REFLECT_PROMPT,
+    GIVE_UP_PROMPT,
     STAGE_GUIDELINES,
 )
 from core.llm import get_llm
@@ -81,6 +82,7 @@ def respond_node(state: ScammerState) -> dict:
     
     prompt = RESPOND_PROMPT.format(
         persuasion_stage=state["persuasion_stage"],
+        patience=f"{state['patience']:.0%}",
         conversation_history=conversation_history or "(conversation just started)",
         victim_message=state["victim_message"] or "(no message yet - cold open)",
         analysis=state["victim_analysis"],
@@ -106,14 +108,35 @@ def respond_node(state: ScammerState) -> dict:
     }
 
 
+def give_up_node(state: ScammerState) -> dict:
+    """Generate a frustrated hang-up message when scammer loses patience."""
+    llm = get_llm()
+    
+    conversation_history = "\n".join(state["conversation_memory"][-10:])
+    
+    prompt = GIVE_UP_PROMPT.format(
+        conversation_history=conversation_history,
+    )
+    
+    response = llm.invoke([
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=prompt),
+    ])
+    
+    return {
+        "give_up_message": response.content.strip(),
+    }
+
+
 def reflect_node(state: ScammerState) -> dict:
-    """Reflect on the turn and update persuasion metrics."""
+    """Reflect on the turn and update persuasion metrics, including patience."""
     llm = get_llm()
     
     prompt = REFLECT_PROMPT.format(
         scammer_response=state["last_response"],
         victim_message=state["victim_message"] or "(cold open)",
         persuasion_level=state["persuasion_level"],
+        patience=state["patience"],
     )
     
     response = llm.invoke([
@@ -125,7 +148,9 @@ def reflect_node(state: ScammerState) -> dict:
     
     # Parse the response
     persuasion_delta = 0.0
+    patience_delta = 0.0
     extracted = state["extracted_sensitive"]
+    is_stalling = False
     
     # Extract persuasion delta
     delta_match = re.search(r"PERSUASION_DELTA:\s*([-\d.]+)", content)
@@ -136,15 +161,43 @@ def reflect_node(state: ScammerState) -> dict:
         except ValueError:
             pass
     
+    # Extract patience delta
+    patience_match = re.search(r"PATIENCE_DELTA:\s*([-\d.]+)", content)
+    if patience_match:
+        try:
+            patience_delta = float(patience_match.group(1))
+            patience_delta = max(-0.3, min(0.1, patience_delta))
+        except ValueError:
+            pass
+    
     # Extract sensitive info flag
     if "EXTRACTED_SENSITIVE: true" in content.lower():
         extracted = True
     
+    # Extract stalling flag
+    if "IS_STALLING: true" in content.lower():
+        is_stalling = True
+    
     new_persuasion = max(0.0, min(1.0, state["persuasion_level"] + persuasion_delta))
+    new_patience = max(0.0, min(1.0, state["patience"] + patience_delta))
+    
+    # Update frustration counter
+    new_frustration = state["frustration_turns"]
+    if is_stalling or patience_delta < -0.1:
+        new_frustration += 1
+    else:
+        new_frustration = 0  # Reset on progress
+    
+    # Determine if scammer should give up
+    # Give up if: patience < 0.2 OR 4+ consecutive stalling turns
+    gave_up = new_patience < 0.2 or new_frustration >= 4
     
     return {
         "persuasion_level": new_persuasion,
+        "patience": new_patience,
+        "frustration_turns": new_frustration,
         "extracted_sensitive": extracted,
+        "gave_up": gave_up,
         "turn": state["turn"] + 1,
     }
 
@@ -182,6 +235,10 @@ def get_initial_scammer_state() -> ScammerState:
         persuasion_stage="building_trust",
         persuasion_level=0.0,
         extracted_sensitive=False,
+        patience=1.0,
+        frustration_turns=0,
+        gave_up=False,
+        give_up_message="",
         victim_message="",
         last_response="",
         victim_analysis="",

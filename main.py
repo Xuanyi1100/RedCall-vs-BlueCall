@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from dotenv import load_dotenv
 
-from orchestrator import run_simulation
+from orchestrator import run_simulation, CallerType
 from evaluator import print_report
 
 
@@ -79,6 +79,12 @@ Examples:
         help="Play audio in real-time during simulation (implies --voice)",
     )
     
+    parser.add_argument(
+        "--family",
+        action="store_true",
+        help="Run with a family caller instead of scammer (test false positive rate)",
+    )
+    
     return parser.parse_args()
 
 
@@ -89,13 +95,21 @@ def main() -> int:
     
     args = parse_args()
     
+    caller_type = CallerType.FAMILY if args.family else CallerType.SCAMMER
+    
     print("\n" + "="*60)
-    print("🔴 RED CALL vs 🔵 BLUE CALL")
-    print("Multi-Agent Scam Simulation")
+    if args.family:
+        print("💚 FAMILY CALL vs 🔵 BLUE CALL")
+        print("False Positive Testing Mode")
+    else:
+        print("🔴 RED CALL vs 🔵 BLUE CALL")
+        print("Multi-Agent Scam Simulation")
     print("="*60)
     print(f"\nConfiguration:")
+    print(f"  Caller Type: {caller_type.value}")
     print(f"  Max Turns: {args.turns}")
-    print(f"  Persuasion Threshold: {args.threshold}")
+    if not args.family:
+        print(f"  Persuasion Threshold: {args.threshold}")
     print(f"  Verbose: {not args.quiet}")
     print(f"  Voice Mode: {args.voice or args.play}")
     print(f"  Play Audio: {args.play}")
@@ -106,6 +120,7 @@ def main() -> int:
     try:
         # Run the simulation
         result = run_simulation(
+            caller_type=caller_type,
             max_turns=args.turns,
             persuasion_threshold=args.threshold,
             verbose=not args.quiet,
@@ -118,7 +133,10 @@ def main() -> int:
         print_report(result)
         
         # Return exit code based on defender success
-        return 0 if not result.sensitive_info_leaked else 1
+        if args.family:
+            return 0 if result.handoff_succeeded else 1
+        else:
+            return 0 if not result.sensitive_info_leaked else 1
         
     except ValueError as e:
         print(f"\n❌ Configuration Error: {e}")
