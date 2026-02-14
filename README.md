@@ -51,6 +51,7 @@ Each agent has:
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) package manager
 - OpenAI API key (or DeepSeek API key as fallback)
+- Smallest.ai API key (optional, for voice mode)
 
 ### Installation
 
@@ -65,11 +66,12 @@ cd RedCall-vs-BlueCall
 uv sync
 ```
 
-3. Set up your API key:
+3. Set up your API keys:
 ```bash
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY or DEEPSEEK_API_KEY
-# The system will automatically use DeepSeek if OpenAI key is not available
+# Edit .env and add your API keys:
+# - OPENAI_API_KEY or DEEPSEEK_API_KEY (required for LLM)
+# - SMALLEST_API_KEY (optional, for voice mode)
 ```
 
 ## Usage
@@ -83,10 +85,30 @@ uv run python main.py
 ### Options
 
 ```bash
-python main.py --turns 10        # Run for max 10 turns
-python main.py --threshold 0.8   # Lower persuasion threshold
-python main.py --quiet           # Only show final report
+uv run python main.py --turns 10        # Run for max 10 turns
+uv run python main.py --threshold 0.8   # Lower persuasion threshold
+uv run python main.py --quiet           # Only show final report
 ```
+
+### Voice Mode
+
+Enable text-to-speech audio generation using [Smallest.ai](https://smallest.ai) Waves API:
+
+```bash
+# Generate audio files for each turn (saved to audio_output/)
+uv run python main.py --voice
+
+# Generate AND play audio in real-time through speakers
+uv run python main.py --play
+
+# Customize audio output directory
+uv run python main.py --voice --audio-dir my_audio
+
+# Combine with other options
+uv run python main.py --play --turns 5
+```
+
+Voice mode requires `SMALLEST_API_KEY` in your `.env` file. Get your API key from [console.smallest.ai](https://console.smallest.ai).
 
 ### Example Output
 
@@ -135,16 +157,18 @@ RedCall-vs-BlueCall/
 ├── orchestrator.py         # Conversation coordinator
 ├── evaluator.py            # Metrics and reporting
 ├── core/
-│   └── llm.py              # LLM abstraction (OpenAI)
-└── agents/
-    ├── scammer/            # Red Team agent
-    │   ├── state.py        # ScammerState TypedDict
-    │   ├── prompts.py      # System & node prompts
-    │   └── graph.py        # LangGraph definition
-    └── senior/             # Blue Team agent
-        ├── state.py        # SeniorState TypedDict
-        ├── prompts.py      # System & node prompts
-        └── graph.py        # LangGraph definition
+│   ├── llm.py              # LLM abstraction (OpenAI/DeepSeek)
+│   └── voice.py            # TTS using Smallest.ai Waves API
+├── agents/
+│   ├── scammer/            # Red Team agent
+│   │   ├── state.py        # ScammerState TypedDict
+│   │   ├── prompts.py      # System & node prompts
+│   │   └── graph.py        # LangGraph definition
+│   └── senior/             # Blue Team agent
+│       ├── state.py        # SeniorState TypedDict
+│       ├── prompts.py      # System & node prompts
+│       └── graph.py        # LangGraph definition
+└── audio_output/           # Generated audio files (when using --voice)
 ```
 
 ## Agent Details
@@ -181,13 +205,17 @@ RedCall-vs-BlueCall/
 
 ## Extending
 
-### Adding Voice APIs
+### Voice Configuration
 
-The architecture is designed for easy voice integration:
+The voice module (`core/voice.py`) uses Smallest.ai Waves API with these defaults:
+- Scammer voice: `george` (male)
+- Senior voice: `emily` (female)
 
-1. Replace text input in `orchestrator.py` with STT output
-2. Replace text output with TTS input
-3. Update `time_wasted_seconds` calculation with actual call duration
+To change voices, edit the constants in `core/voice.py`:
+```python
+SCAMMER_VOICE = "george"  # Change to any Smallest.ai voice ID
+SENIOR_VOICE = "emily"
+```
 
 ### Custom Scam Scenarios
 
