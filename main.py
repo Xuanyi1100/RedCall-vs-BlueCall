@@ -60,6 +60,25 @@ Examples:
         help="Only show final report, not turn-by-turn output",
     )
     
+    parser.add_argument(
+        "--voice",
+        action="store_true",
+        help="Enable voice mode - generate TTS audio for each turn (requires SMALLEST_API_KEY)",
+    )
+    
+    parser.add_argument(
+        "--audio-dir",
+        type=str,
+        default="audio_output",
+        help="Directory to save audio files (default: audio_output)",
+    )
+    
+    parser.add_argument(
+        "--play",
+        action="store_true",
+        help="Play audio in real-time during simulation (implies --voice)",
+    )
+    
     return parser.parse_args()
 
 
@@ -78,6 +97,10 @@ def main() -> int:
     print(f"  Max Turns: {args.turns}")
     print(f"  Persuasion Threshold: {args.threshold}")
     print(f"  Verbose: {not args.quiet}")
+    print(f"  Voice Mode: {args.voice or args.play}")
+    print(f"  Play Audio: {args.play}")
+    if args.voice or args.play:
+        print(f"  Audio Output: {args.audio_dir}")
     print("\nStarting simulation...")
     
     try:
@@ -86,6 +109,9 @@ def main() -> int:
             max_turns=args.turns,
             persuasion_threshold=args.threshold,
             verbose=not args.quiet,
+            voice_mode=args.voice,
+            play_audio=args.play,
+            audio_output_dir=args.audio_dir,
         )
         
         # Print evaluation report
