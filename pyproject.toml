@@ -10,6 +10,14 @@ dependencies = [
     "langchain-core>=0.3.0",
     "python-dotenv>=1.0.0",
     "smallestai>=1.0.0",
+    "requests>=2.28.0",
+    "sounddevice>=0.4.6",
+    "numpy>=1.24.0",
+    "streamlit>=1.30.0",
+    "plotly>=5.18.0",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "websockets>=12.0",
 ]
 
 [project.scripts]

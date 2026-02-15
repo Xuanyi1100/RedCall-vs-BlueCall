@@ -1,10 +1,21 @@
 """Voice module for TTS/STT using Smallest.ai Waves API."""
 
 import os
+import io
+import json
+import base64
+import wave
+import tempfile
 from functools import lru_cache
-from typing import Optional
+from typing import Iterator, Optional, Tuple
 
+import requests
 from smallestai.waves import WavesClient
+
+
+# Pulse STT API endpoint
+PULSE_STT_URL = "https://waves-api.smallest.ai/api/v1/pulse/get_text"
+LIGHTNING_STREAM_TTS_URL = "https://waves-api.smallest.ai/api/v1/lightning-v2/stream"
 
 
 @lru_cache(maxsize=1)
@@ -161,14 +172,77 @@ def text_to_speech(
     return _combine_wav_chunks(audio_chunks)
 
 
+def stream_text_to_speech_http(
+    text: str,
+    voice_id: str = "emily",
+    sample_rate: int = 24000,
+    language: str = "en",
+    model: str = "lightning-v2",
+) -> Iterator[bytes]:
+    """
+    Stream TTS audio chunks over HTTP (SSE) from Smallest.ai Waves.
+
+    The stream endpoint emits Server-Sent Events where each `data:` line is JSON
+    containing a base64-encoded audio chunk under `data.audio`.
+
+    Args:
+        text: The text to synthesize.
+        voice_id: Voice to use.
+        sample_rate: Output sample rate.
+        language: Language code.
+        model: Waves model name (default: lightning-v2).
+
+    Yields:
+        Raw PCM S16LE mono audio chunks as bytes.
+    """
+    api_key = os.getenv("SMALLEST_API_KEY")
+    if not api_key:
+        return
+
+    payload = {
+        "voice_id": voice_id,
+        "text": text,
+        "sample_rate": sample_rate,
+        "language": language,
+        "output_format": "pcm",
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
+
+    url = LIGHTNING_STREAM_TTS_URL if model == "lightning-v2" else f"https://waves-api.smallest.ai/api/v1/{model}/stream"
+    with requests.post(url, json=payload, headers=headers, stream=True, timeout=60) as response:
+        response.raise_for_status()
+
+        for line in response.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+            if not line.startswith("data:"):
+                continue
+
+            raw_json = line[5:].strip()
+            if not raw_json:
+                continue
+
+            try:
+                event = json.loads(raw_json)
+                audio_b64 = event.get("audio") or event.get("data", {}).get("audio")
+                if audio_b64:
+                    yield base64.b64decode(audio_b64)
+            except Exception:
+                continue
+
+
 def is_voice_enabled() -> bool:
     """Check if voice mode is available."""
     return os.getenv("SMALLEST_API_KEY") is not None
 
 
 # Voice presets for the agents
-SCAMMER_VOICE = "ashley"  # Female voice for scammer
-SENIOR_VOICE = "albus"    # Male voice for senior
+SCAMMER_VOICE = "eleanor"  # Female voice for scammer
+SENIOR_VOICE = "albus"  # Male voice for senior (old-age, narrative)
 
 
 def play_audio(audio_bytes: bytes) -> bool:
@@ -250,3 +324,203 @@ def play_audio_file(filepath: str) -> bool:
     except Exception as e:
         print(f"⚠️  Audio playback failed: {e}")
         return False
+
+
+# ============================================================================
+# Speech-to-Text (STT) using Smallest.ai Pulse
+# ============================================================================
+
+def speech_to_text(
+    audio_bytes: bytes,
+    language: str = "en",
+) -> Optional[str]:
+    """
+    Convert speech audio to text using Smallest.ai Pulse STT.
+    
+    Args:
+        audio_bytes: Audio data in WAV format.
+        language: Language code (default: "en").
+        
+    Returns:
+        Transcribed text or None if failed.
+    """
+    api_key = os.getenv("SMALLEST_API_KEY")
+    if not api_key:
+        return None
+    
+    try:
+        response = requests.post(
+            PULSE_STT_URL,
+            params={
+                "model": "pulse",
+                "language": language,
+            },
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "audio/wav",
+            },
+            data=audio_bytes,
+            timeout=30,
+        )
+        response.raise_for_status()
+        result = response.json()
+        # API returns 'transcription' not 'text'
+        return result.get("transcription", result.get("text", "")).strip()
+    except Exception as e:
+        print(f"⚠️  STT failed: {e}")
+        return None
+
+
+def record_audio_from_mic(
+    duration_seconds: float = 5.0,
+    sample_rate: int = 16000,
+    channels: int = 1,
+) -> Optional[bytes]:
+    """
+    Record audio from microphone.
+    
+    Args:
+        duration_seconds: How long to record.
+        sample_rate: Audio sample rate (16000 recommended for STT).
+        channels: Number of audio channels (1 = mono).
+        
+    Returns:
+        WAV audio bytes or None if recording failed.
+    """
+    try:
+        import sounddevice as sd
+        import numpy as np
+    except ImportError:
+        print("⚠️  sounddevice not installed. Run: uv add sounddevice numpy")
+        return None
+    
+    try:
+        print(f"🎤 Recording for {duration_seconds}s... (speak now)")
+        recording = sd.rec(
+            int(duration_seconds * sample_rate),
+            samplerate=sample_rate,
+            channels=channels,
+            dtype='int16',
+        )
+        sd.wait()  # Wait for recording to complete
+        print("✅ Recording complete.")
+        
+        # Convert to WAV bytes
+        output = io.BytesIO()
+        wf = wave.open(output, 'wb')
+        wf.setnchannels(channels)
+        wf.setsampwidth(2)  # 16-bit = 2 bytes
+        wf.setframerate(sample_rate)
+        wf.writeframes(recording.tobytes())
+        wf.close()
+        
+        return output.getvalue()
+        
+    except Exception as e:
+        print(f"⚠️  Recording failed: {e}")
+        return None
+
+
+def record_until_silence(
+    silence_threshold: float = 0.005,  # Lowered for better silence detection
+    silence_duration: float = 1.5,
+    max_duration: float = 30.0,
+    sample_rate: int = 16000,
+    channels: int = 1,
+) -> Optional[bytes]:
+    """
+    Record audio until user stops speaking (silence detected).
+    
+    Args:
+        silence_threshold: RMS threshold (0-1) below which is considered silence.
+        silence_duration: Seconds of silence before stopping.
+        max_duration: Maximum recording duration.
+        sample_rate: Audio sample rate.
+        channels: Number of channels.
+        
+    Returns:
+        WAV audio bytes or None if failed.
+    """
+    try:
+        import sounddevice as sd
+        import numpy as np
+    except ImportError:
+        print("⚠️  sounddevice not installed. Run: uv add sounddevice numpy")
+        return None
+    
+    CHUNK_DURATION = 0.1  # 100ms chunks
+    chunk_samples = int(sample_rate * CHUNK_DURATION)
+    
+    def get_rms(data: np.ndarray) -> float:
+        """Calculate RMS (volume level) of audio chunk."""
+        return np.sqrt(np.mean(data.astype(np.float32) ** 2)) / 32768.0
+    
+    try:
+        print("🎤 Listening... (speak, then pause to finish)")
+        frames = []
+        silent_chunks = 0
+        chunks_for_silence = int(silence_duration / CHUNK_DURATION)
+        max_chunks = int(max_duration / CHUNK_DURATION)
+        has_speech = False
+        
+        with sd.InputStream(samplerate=sample_rate, channels=channels, dtype='int16') as stream:
+            for _ in range(max_chunks):
+                data, _ = stream.read(chunk_samples)
+                frames.append(data.copy())
+                rms = get_rms(data)
+                
+                if rms > silence_threshold:
+                    has_speech = True
+                    silent_chunks = 0
+                else:
+                    if has_speech:
+                        silent_chunks += 1
+                        if silent_chunks >= chunks_for_silence:
+                            break
+        
+        print("✅ Recording complete.")
+        
+        if not has_speech:
+            print("⚠️  No speech detected.")
+            return None
+        
+        # Combine frames and convert to WAV bytes
+        recording = np.concatenate(frames)
+        output = io.BytesIO()
+        wf = wave.open(output, 'wb')
+        wf.setnchannels(channels)
+        wf.setsampwidth(2)  # 16-bit = 2 bytes
+        wf.setframerate(sample_rate)
+        wf.writeframes(recording.tobytes())
+        wf.close()
+        
+        return output.getvalue()
+        
+    except Exception as e:
+        print(f"⚠️  Recording failed: {e}")
+        return None
+
+
+def listen_and_transcribe(
+    use_silence_detection: bool = True,
+    duration_seconds: float = 5.0,
+) -> Optional[str]:
+    """
+    Record from microphone and transcribe to text.
+    
+    Args:
+        use_silence_detection: If True, record until silence. Otherwise fixed duration.
+        duration_seconds: Fixed duration if not using silence detection.
+        
+    Returns:
+        Transcribed text or None if failed.
+    """
+    if use_silence_detection:
+        audio = record_until_silence()
+    else:
+        audio = record_audio_from_mic(duration_seconds)
+    
+    if not audio:
+        return None
+    
+    return speech_to_text(audio)
