@@ -2,10 +2,12 @@
 
 import os
 import io
+import json
+import base64
 import wave
 import tempfile
 from functools import lru_cache
-from typing import Optional, Tuple
+from typing import Iterator, Optional, Tuple
 
 import requests
 from smallestai.waves import WavesClient
@@ -13,6 +15,7 @@ from smallestai.waves import WavesClient
 
 # Pulse STT API endpoint
 PULSE_STT_URL = "https://waves-api.smallest.ai/api/v1/pulse/get_text"
+LIGHTNING_STREAM_TTS_URL = "https://waves-api.smallest.ai/api/v1/lightning-v2/stream"
 
 
 @lru_cache(maxsize=1)
@@ -167,6 +170,69 @@ def text_to_speech(
     
     # Combine chunks
     return _combine_wav_chunks(audio_chunks)
+
+
+def stream_text_to_speech_http(
+    text: str,
+    voice_id: str = "emily",
+    sample_rate: int = 24000,
+    language: str = "en",
+    model: str = "lightning-v2",
+) -> Iterator[bytes]:
+    """
+    Stream TTS audio chunks over HTTP (SSE) from Smallest.ai Waves.
+
+    The stream endpoint emits Server-Sent Events where each `data:` line is JSON
+    containing a base64-encoded audio chunk under `data.audio`.
+
+    Args:
+        text: The text to synthesize.
+        voice_id: Voice to use.
+        sample_rate: Output sample rate.
+        language: Language code.
+        model: Waves model name (default: lightning-v2).
+
+    Yields:
+        Raw PCM S16LE mono audio chunks as bytes.
+    """
+    api_key = os.getenv("SMALLEST_API_KEY")
+    if not api_key:
+        return
+
+    payload = {
+        "voice_id": voice_id,
+        "text": text,
+        "sample_rate": sample_rate,
+        "language": language,
+        "output_format": "pcm",
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
+
+    url = LIGHTNING_STREAM_TTS_URL if model == "lightning-v2" else f"https://waves-api.smallest.ai/api/v1/{model}/stream"
+    with requests.post(url, json=payload, headers=headers, stream=True, timeout=60) as response:
+        response.raise_for_status()
+
+        for line in response.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+            if not line.startswith("data:"):
+                continue
+
+            raw_json = line[5:].strip()
+            if not raw_json:
+                continue
+
+            try:
+                event = json.loads(raw_json)
+                audio_b64 = event.get("audio") or event.get("data", {}).get("audio")
+                if audio_b64:
+                    yield base64.b64decode(audio_b64)
+            except Exception:
+                continue
 
 
 def is_voice_enabled() -> bool:

@@ -131,7 +131,7 @@ export function AgentCard({ type, isSpeaking, liveLines, thoughts, showThoughts,
           {/* Name & Role */}
           <div>
             <h2 className={`text-xl font-bold ${accentColor}`}>
-              {isScammer ? 'Scammer' : isFamily ? 'Family Caller' : 'Senior Defender'}
+              {isScammer ? 'Scammer' : isFamily ? 'Family Caller' : 'Scammers Nightmare'}
             </h2>
             <p className="text-slate-500 text-sm">
               {isScammer ? 'Red Team Attacker' : isFamily ? 'Legitimate Caller' : 'Blue Team AI Agent'}

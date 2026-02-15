@@ -67,6 +67,9 @@ export type WSEventType =
   | 'scammer_message'
   | 'senior_message'
   | 'scammer_gave_up'
+  | 'tts_stream_start'
+  | 'tts_stream_chunk'
+  | 'tts_stream_end'
   | 'live_caption'
   | 'live_caption_done'
   | 'simulation_end'
@@ -83,6 +86,9 @@ export interface WSEvent {
     max_turns?: number;
     caller_type?: string;
     voice_enabled?: boolean;
+    audio_chunk_base64?: string | null;
+    sample_rate?: number;
+    audio_encoding?: string;
     speaker?: 'scammer' | 'senior';
     sentence?: string;
     scammer_state?: ScammerState;

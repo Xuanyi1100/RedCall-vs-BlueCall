@@ -46,7 +46,7 @@ function App() {
         {/* Title */}
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold bg-gradient-to-r from-red-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">
-            🔴 RedCall vs BlueCall 🔵
+            Scammers Nightmare Calls Tester
           </h1>
           <p className="text-slate-400 mt-1">Voice AI Agent Scam Defense Demo</p>
         </div>

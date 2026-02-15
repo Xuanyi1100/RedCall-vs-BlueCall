@@ -17,11 +17,8 @@ from core.llm import get_llm
 
 # Predefined family scenarios for variety
 FAMILY_SCENARIOS = [
-    {"relationship": "grandson", "caller_name": "Tommy", "call_reason": "checking in and saying hi"},
     {"relationship": "granddaughter", "caller_name": "Sarah", "call_reason": "planning a visit next weekend"},
     {"relationship": "daughter", "caller_name": "Linda", "call_reason": "making sure you took your medicine"},
-    {"relationship": "son", "caller_name": "Michael", "call_reason": "telling you about the kids' soccer game"},
-    {"relationship": "nephew", "caller_name": "David", "call_reason": "wishing you happy birthday"},
     {"relationship": "niece", "caller_name": "Emily", "call_reason": "inviting you to Thanksgiving dinner"},
 ]
 

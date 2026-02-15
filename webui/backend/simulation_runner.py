@@ -8,6 +8,7 @@ import base64
 import io
 import re
 import sys
+import threading
 import wave
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -21,7 +22,13 @@ from orchestrator import CallerType
 from agents.scammer.graph import create_scammer_agent, get_initial_scammer_state, give_up_node
 from agents.family.graph import create_family_agent, get_initial_family_state
 from agents.senior.graph import create_senior_agent, get_initial_senior_state
-from core.voice import text_to_speech, is_voice_enabled, SCAMMER_VOICE, SENIOR_VOICE
+from core.voice import (
+    text_to_speech,
+    stream_text_to_speech_http,
+    is_voice_enabled,
+    SCAMMER_VOICE,
+    SENIOR_VOICE,
+)
 
 
 class SimulationRunner:
@@ -136,6 +143,185 @@ class SimulationRunner:
 
         return None, estimated_duration
 
+    async def _stream_http_tts_to_websocket(
+        self,
+        websocket: WebSocket,
+        turn_num: int,
+        speaker: str,
+        text: str,
+        voice_id: str,
+        sample_rate: int = 24000,
+    ) -> float:
+        """
+        Stream HTTP TTS chunks to frontend over websocket.
+
+        Returns:
+            Approximate speaking duration in seconds.
+        """
+        estimated_duration = self._estimate_speaking_duration(text)
+        if not self.enable_voice:
+            return estimated_duration
+        sentences = self._split_into_sentences(text)
+        sentence_word_counts = [max(1, len(sentence.split())) for sentence in sentences]
+        total_words = sum(sentence_word_counts) if sentence_word_counts else 0
+        min_total_duration = 0.35 * len(sentences)
+        effective_total_duration = max(estimated_duration, min_total_duration)
+        # Dynamic UI pacing offset so longer lines scroll more slowly.
+        # Keeps captions readable without stalling short lines too much.
+        line_visual_delays: List[float] = [
+            min(0.90, 0.08 + (len(sentence) * 0.007)) for sentence in sentences
+        ]
+        cumulative_visual_delays: List[float] = []
+        running_visual_delay = 0.0
+        for delay in line_visual_delays:
+            cumulative_visual_delays.append(running_visual_delay)
+            running_visual_delay += delay
+        sentence_start_thresholds: List[float] = []
+        cumulative = 0.0
+        for idx, count in enumerate(sentence_word_counts):
+            sentence_start_thresholds.append(cumulative)
+            if total_words:
+                cumulative += effective_total_duration * (count / total_words)
+            elif sentences:
+                cumulative += effective_total_duration / len(sentences)
+            if idx == len(sentence_word_counts) - 1:
+                cumulative = effective_total_duration
+
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[Tuple[str, Optional[bytes]]] = asyncio.Queue()
+        total_bytes = 0
+        saw_chunk = False
+        caption_index = 0
+        last_streamed_duration = 0.0
+
+        def producer():
+            try:
+                for chunk in stream_text_to_speech_http(
+                    text=text,
+                    voice_id=voice_id,
+                    sample_rate=sample_rate,
+                ):
+                    if chunk:
+                        loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))
+            except Exception as exc:
+                print(f"HTTP stream TTS error: {exc}")
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", None))
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+
+        producer_thread = threading.Thread(target=producer, daemon=True)
+        producer_thread.start()
+
+        await websocket.send_json({
+            "type": "tts_stream_start",
+            "data": {
+                "turn": turn_num,
+                "speaker": speaker,
+                "sample_rate": sample_rate,
+                "audio_encoding": "pcm_s16le",
+            },
+        })
+        stream_start_ts = loop.time()
+
+        async def emit_captions_due(streamed_duration: float, force_time_only: bool = False) -> None:
+            nonlocal caption_index
+            elapsed = loop.time() - stream_start_ts
+            while caption_index < len(sentences):
+                threshold = sentence_start_thresholds[caption_index]
+                visual_offset = cumulative_visual_delays[caption_index] if caption_index < len(cumulative_visual_delays) else 0.0
+                time_ready = elapsed >= max(0.0, threshold + visual_offset)
+                audio_ready = streamed_duration >= max(0.0, threshold - 0.05)
+                if force_time_only:
+                    if not time_ready:
+                        break
+                else:
+                    if not (time_ready and audio_ready):
+                        break
+
+                await websocket.send_json({
+                    "type": "live_caption",
+                    "data": {
+                        "turn": turn_num,
+                        "speaker": speaker,
+                        "sentence": sentences[caption_index],
+                        "sentence_index": caption_index,
+                        "is_final_sentence": caption_index == len(sentences) - 1,
+                    },
+                })
+                caption_index += 1
+                elapsed = loop.time() - stream_start_ts
+
+        try:
+            while True:
+                event_type, payload = await queue.get()
+                if event_type == "chunk" and payload:
+                    saw_chunk = True
+                    total_bytes += len(payload)
+                    await websocket.send_json({
+                        "type": "tts_stream_chunk",
+                        "data": {
+                            "turn": turn_num,
+                            "speaker": speaker,
+                            "audio_chunk_base64": base64.b64encode(payload).decode("utf-8"),
+                        },
+                    })
+                    last_streamed_duration = total_bytes / float(sample_rate * 2)
+                    await emit_captions_due(last_streamed_duration, force_time_only=False)
+                elif event_type == "done":
+                    break
+                elif event_type == "error":
+                    break
+        finally:
+            final_streamed_duration = max(last_streamed_duration, effective_total_duration)
+            deadline_ts = stream_start_ts + effective_total_duration + running_visual_delay + 0.6
+            while caption_index < len(sentences):
+                await emit_captions_due(final_streamed_duration, force_time_only=True)
+                if caption_index >= len(sentences):
+                    break
+                if loop.time() >= deadline_ts:
+                    # Safety: avoid hanging captions forever on timing edge-cases.
+                    while caption_index < len(sentences):
+                        await websocket.send_json({
+                            "type": "live_caption",
+                            "data": {
+                                "turn": turn_num,
+                                "speaker": speaker,
+                                "sentence": sentences[caption_index],
+                                "sentence_index": caption_index,
+                                "is_final_sentence": caption_index == len(sentences) - 1,
+                            },
+                        })
+                        caption_index += 1
+                    break
+                await asyncio.sleep(0.03)
+            if sentences:
+                await websocket.send_json({
+                    "type": "live_caption_done",
+                    "data": {
+                        "turn": turn_num,
+                        "speaker": speaker,
+                    },
+                })
+            await websocket.send_json({
+                "type": "tts_stream_end",
+                "data": {
+                    "turn": turn_num,
+                    "speaker": speaker,
+                },
+            })
+            expected_playback_duration = max(last_streamed_duration, effective_total_duration)
+            await self._wait_for_playback_done(
+                websocket=websocket,
+                turn_num=turn_num,
+                speaker=speaker,
+                expected_duration_seconds=expected_playback_duration,
+            )
+
+        if saw_chunk:
+            # 16-bit mono PCM -> 2 bytes per sample
+            return total_bytes / float(sample_rate * 2)
+        return estimated_duration
+
     def _split_into_sentences(self, text: str) -> List[str]:
         """Split text into sentence chunks for live subtitle rendering."""
         normalized = " ".join(text.split())
@@ -144,6 +330,43 @@ class SimulationRunner:
 
         sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", normalized) if s.strip()]
         return sentences or [normalized]
+
+    async def _wait_for_playback_done(
+        self,
+        websocket: WebSocket,
+        turn_num: int,
+        speaker: str,
+        expected_duration_seconds: float,
+    ) -> None:
+        """
+        Wait for frontend playback completion ack before moving to next speaker.
+
+        Falls back to timeout so server cannot hang indefinitely.
+        """
+        loop = asyncio.get_running_loop()
+        timeout_seconds = min(45.0, max(2.0, expected_duration_seconds + 2.0))
+        deadline = loop.time() + timeout_seconds
+
+        while self.running:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return
+            try:
+                payload = await asyncio.wait_for(websocket.receive_json(), timeout=remaining)
+            except asyncio.TimeoutError:
+                return
+            except Exception:
+                return
+
+            action = payload.get("action")
+            if action == "tts_playback_done":
+                if payload.get("turn") == turn_num and payload.get("speaker") == speaker:
+                    return
+                continue
+
+            if action == "stop":
+                self.stop()
+                return
 
     async def _stream_live_caption(
         self,
@@ -239,30 +462,32 @@ class SimulationRunner:
             )
 
             caller_message = self._caller_state["last_response"]
-            caller_audio, caller_speaking_duration = await loop.run_in_executor(
-                None,
-                self._generate_audio_payload,
-                caller_message,
-                SCAMMER_VOICE
-            )
 
             await websocket.send_json({
                 "type": "scammer_message",
                 "data": {
                     "turn": turn_num,
                     "message": caller_message,
-                    "audio_base64": caller_audio,
+                    "audio_base64": None,
                     "scammer_state": self._get_scammer_state_dict(),
                 }
             })
-
-            await self._stream_live_caption(
-                websocket=websocket,
-                turn_num=turn_num,
-                speaker="scammer",
-                message=caller_message,
-                speech_duration_seconds=caller_speaking_duration,
-            )
+            if self.enable_voice:
+                await self._stream_http_tts_to_websocket(
+                    websocket=websocket,
+                    turn_num=turn_num,
+                    speaker="scammer",
+                    text=caller_message,
+                    voice_id=SCAMMER_VOICE,
+                )
+            else:
+                await self._stream_live_caption(
+                    websocket=websocket,
+                    turn_num=turn_num,
+                    speaker="scammer",
+                    message=caller_message,
+                    speech_duration_seconds=self._estimate_speaking_duration(caller_message),
+                )
 
             # Check scammer end conditions
             if is_scammer:
@@ -297,30 +522,32 @@ class SimulationRunner:
 
                     give_up_result = give_up_node(self._caller_state)
                     give_up_msg = give_up_result.get("give_up_message", "Fine! I'm done with this!")
-                    give_up_audio, give_up_duration = await loop.run_in_executor(
-                        None,
-                        self._generate_audio_payload,
-                        give_up_msg,
-                        SCAMMER_VOICE
-                    )
 
                     await websocket.send_json({
                         "type": "scammer_gave_up",
                         "data": {
                             "turn": turn_num,
                             "message": give_up_msg,
-                            "audio_base64": give_up_audio,
+                            "audio_base64": None,
                             "scammer_state": self._get_scammer_state_dict(),
                         }
                     })
-
-                    await self._stream_live_caption(
-                        websocket=websocket,
-                        turn_num=turn_num,
-                        speaker="scammer",
-                        message=give_up_msg,
-                        speech_duration_seconds=give_up_duration,
-                    )
+                    if self.enable_voice:
+                        await self._stream_http_tts_to_websocket(
+                            websocket=websocket,
+                            turn_num=turn_num,
+                            speaker="scammer",
+                            text=give_up_msg,
+                            voice_id=SCAMMER_VOICE,
+                        )
+                    else:
+                        await self._stream_live_caption(
+                            websocket=websocket,
+                            turn_num=turn_num,
+                            speaker="scammer",
+                            message=give_up_msg,
+                            speech_duration_seconds=self._estimate_speaking_duration(give_up_msg),
+                        )
 
                     await websocket.send_json({
                         "type": "simulation_end",
@@ -356,30 +583,32 @@ class SimulationRunner:
                 })
                 break
 
-            senior_audio, senior_speaking_duration = await loop.run_in_executor(
-                None,
-                self._generate_audio_payload,
-                senior_message,
-                SENIOR_VOICE
-            )
 
             await websocket.send_json({
                 "type": "senior_message",
                 "data": {
                     "turn": turn_num,
                     "message": senior_message,
-                    "audio_base64": senior_audio,
+                    "audio_base64": None,
                     "senior_state": self._get_senior_state_dict(),
                 }
             })
-
-            await self._stream_live_caption(
-                websocket=websocket,
-                turn_num=turn_num,
-                speaker="senior",
-                message=senior_message,
-                speech_duration_seconds=senior_speaking_duration,
-            )
+            if self.enable_voice:
+                await self._stream_http_tts_to_websocket(
+                    websocket=websocket,
+                    turn_num=turn_num,
+                    speaker="senior",
+                    text=senior_message,
+                    voice_id=SENIOR_VOICE,
+                )
+            else:
+                await self._stream_live_caption(
+                    websocket=websocket,
+                    turn_num=turn_num,
+                    speaker="senior",
+                    message=senior_message,
+                    speech_duration_seconds=self._estimate_speaking_duration(senior_message),
+                )
 
             if is_scammer and self._senior_state.get("leaked_sensitive_info", False):
                 self.end_reason = "sensitive_info_leaked"
