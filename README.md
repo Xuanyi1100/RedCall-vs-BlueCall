@@ -1,4 +1,4 @@
-# RedCall vs BlueCall 🔴📞🔵
+# The Scammer's Nightmare 🔴📞🔵
 
 A multi-agent adversarial scam simulation system built with Python, LangGraph, and OpenAI (with DeepSeek fallback).
 
