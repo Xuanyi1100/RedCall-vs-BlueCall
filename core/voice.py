@@ -8,7 +8,7 @@ from smallestai.waves import WavesClient
 
 
 @lru_cache(maxsize=1)
-def get_waves_client(voice_id: str = "emily") -> Optional[WavesClient]:
+def get_waves_client(voice_id: str = "albus") -> Optional[WavesClient]:
     """
     Get a configured Waves client for TTS/STT.
     
@@ -21,7 +21,7 @@ def get_waves_client(voice_id: str = "emily") -> Optional[WavesClient]:
     
     return WavesClient(
         api_key=api_key,
-        model="lightning",
+        model="lightning-v2",
         sample_rate=24000,
         voice_id=voice_id,
     )
@@ -118,7 +118,7 @@ def _combine_wav_chunks(chunks: list[bytes]) -> bytes:
 
 def text_to_speech(
     text: str,
-    voice_id: str = "emily",
+    voice_id: str = "albus",
     sample_rate: int = 24000,
 ) -> Optional[bytes]:
     """
@@ -126,7 +126,7 @@ def text_to_speech(
     
     Args:
         text: The text to synthesize.
-        voice_id: Voice to use (default: "emily").
+        voice_id: Voice to use (default: "albus").
         sample_rate: Audio sample rate (default: 24000).
         
     Returns:
@@ -139,7 +139,7 @@ def text_to_speech(
     # Create client with specific voice
     client = WavesClient(
         api_key=api_key,
-        model="lightning",
+        model="lightning-v2",
         sample_rate=sample_rate,
         voice_id=voice_id,
     )
@@ -167,8 +167,8 @@ def is_voice_enabled() -> bool:
 
 
 # Voice presets for the agents
-SCAMMER_VOICE = "george"  # Male voice for scammer
-SENIOR_VOICE = "emily"    # Female voice for senior
+SCAMMER_VOICE = "ashley"  # Female voice for scammer
+SENIOR_VOICE = "albus"    # Male voice for senior
 
 
 def play_audio(audio_bytes: bytes) -> bool:

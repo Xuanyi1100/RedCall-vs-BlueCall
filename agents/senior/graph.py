@@ -15,6 +15,7 @@ from agents.senior.prompts import (
     RESPOND_PROMPT,
     REFLECT_PROMPT,
     TACTIC_GUIDELINES,
+    POST_CALL_REFLECTION_PROMPT,
 )
 from core.llm import get_llm
 
@@ -286,3 +287,40 @@ def get_initial_senior_state() -> SeniorState:
         scam_analysis="",
         current_tactic="",
     )
+
+
+def generate_post_call_reflection(
+    conversation_memory: list[str],
+    outcome: str,
+    total_turns: int,
+    scammer_patience: float = 0.0,
+) -> str:
+    """
+    Generate a post-call reflection after the scammer hangs up.
+    
+    Args:
+        conversation_memory: The full conversation history.
+        outcome: How the call ended (e.g., "scammer_gave_up").
+        total_turns: Total number of conversation turns.
+        scammer_patience: Scammer's final patience level (0.0-1.0).
+        
+    Returns:
+        A spoken reflection from the senior agent.
+    """
+    llm = get_llm()
+    
+    conversation_history = "\n".join(conversation_memory)
+    
+    prompt = POST_CALL_REFLECTION_PROMPT.format(
+        conversation_history=conversation_history,
+        outcome=outcome,
+        total_turns=total_turns,
+        scammer_patience=f"{scammer_patience:.0%}",
+    )
+    
+    response = llm.invoke([
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=prompt),
+    ])
+    
+    return response.content.strip()

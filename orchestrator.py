@@ -10,9 +10,9 @@ from agents.scammer.graph import create_scammer_agent, get_initial_scammer_state
 from agents.scammer.state import ScammerState
 from agents.family.graph import create_family_agent, get_initial_family_state
 from agents.family.state import FamilyState
-from agents.senior.graph import create_senior_agent, get_initial_senior_state
+from agents.senior.graph import create_senior_agent, get_initial_senior_state, generate_post_call_reflection
 from agents.senior.state import SeniorState
-from core.voice import text_to_speech, is_voice_enabled, play_audio_file, SCAMMER_VOICE, SENIOR_VOICE
+from core.voice import text_to_speech, is_voice_enabled, play_audio_file, play_audio, SCAMMER_VOICE, SENIOR_VOICE
 
 
 class CallerType(Enum):
@@ -189,7 +189,31 @@ class Orchestrator:
                     if verbose:
                         print(f"\n🔴 Scammer: {give_up_msg}")
                         print("   [📵 HUNG UP - Lost patience]")
+                    
+                    # Generate and play TTS for the give up message
+                    if self._voice_enabled or self.play_audio:
+                        give_up_audio = text_to_speech(give_up_msg, voice_id=SCAMMER_VOICE)
+                        if give_up_audio:
+                            # Save the audio
+                            give_up_path = Path(self.audio_output_dir) / f"turn_{turn_num:02d}_scammer_hangup.wav"
+                            with open(give_up_path, "wb") as f:
+                                f.write(give_up_audio)
+                            if verbose:
+                                print(f"   🔊 Audio: {give_up_path}")
+                            
+                            # Play if enabled
+                            if self.play_audio:
+                                play_audio(give_up_audio)
+                                # Play hang-up beep sound
+                                import time
+                                time.sleep(0.3)  # Brief pause
+                                self._play_hangup_sound()
+                    
+                    if verbose:
                         print("\n✅ Scammer gave up and hung up!")
+                    
+                    # Generate and speak senior's post-call reflection
+                    self._do_post_call_reflection(verbose=verbose)
                     
                     self._record_turn(turn_num, give_up_msg, "(scammer hung up)")
                     break
@@ -247,6 +271,10 @@ class Orchestrator:
         
         if self._voice_enabled and verbose:
             print(f"\n🔊 Audio files saved to: {self.audio_output_dir}/")
+        
+        # If we reached max turns without scammer giving up, still do reflection for scam calls
+        if end_reason == "max_turns_reached" and self.caller_type == CallerType.SCAMMER:
+            self._do_post_call_reflection(verbose=verbose)
         
         # Build final result
         return self._build_result(end_reason)
@@ -327,6 +355,65 @@ class Orchestrator:
             record.recognized = self._caller_state["recognized"]
         
         self._turns.append(record)
+    
+    def _do_post_call_reflection(self, verbose: bool = True) -> None:
+        """
+        Generate and optionally speak a post-call reflection.
+        
+        Called after scammer gives up or max turns reached.
+        """
+        if self.caller_type != CallerType.SCAMMER:
+            return
+        
+        if verbose:
+            print("\n" + "="*60)
+            print("🧐 Assistant'S POST-CALL REFLECTION")
+            print("="*60)
+        
+        # Generate the reflection
+        reflection = generate_post_call_reflection(
+            conversation_memory=self._senior_state["conversation_memory"],
+            outcome="scammer_gave_up" if self._caller_state["gave_up"] else "max_turns_reached",
+            total_turns=len(self._turns),
+            scammer_patience=self._caller_state["patience"],
+        )
+        
+        if verbose:
+            print(f"\n👴 Mr. Albus (reflecting): {reflection}")
+        
+        # Speak the reflection if voice mode is enabled
+        if self._voice_enabled or self.play_audio:
+            if verbose:
+                print("\n   🔊 Speaking reflection...")
+            audio = text_to_speech(reflection, voice_id=SENIOR_VOICE)
+            if audio:
+                # Save the reflection audio
+                filepath = Path(self.audio_output_dir) / "reflection.wav"
+                with open(filepath, "wb") as f:
+                    f.write(audio)
+                if verbose:
+                    print(f"   🔊 Audio saved: {filepath}")
+                
+                # Play if play_audio is enabled
+                if self.play_audio:
+                    play_audio(audio)
+    
+    def _play_hangup_sound(self) -> None:
+        """Play a hang-up sound effect (beep tones)."""
+        import subprocess
+        import platform
+        
+        try:
+            system = platform.system()
+            if system == "Darwin":  # macOS
+                # Play three short beeps to simulate busy signal
+                for _ in range(3):
+                    subprocess.run(["afplay", "/System/Library/Sounds/Tink.aiff"], check=True)
+            else:
+                # Fallback: just print
+                print("   📠 *hang-up tone*")
+        except Exception:
+            print("   📠 *hang-up tone*")
 
 
 def run_simulation(

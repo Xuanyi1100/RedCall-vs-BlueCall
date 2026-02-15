@@ -129,7 +129,10 @@ def give_up_node(state: ScammerState) -> dict:
 
 
 def reflect_node(state: ScammerState) -> dict:
-    """Reflect on the turn and update persuasion metrics, including patience."""
+    """Reflect on the turn and update persuasion metrics, including patience.
+    
+    Uses simple deterministic rules instead of LLM parsing for reliability.
+    """
     llm = get_llm()
     
     prompt = REFLECT_PROMPT.format(
@@ -144,53 +147,54 @@ def reflect_node(state: ScammerState) -> dict:
         HumanMessage(content=prompt),
     ])
     
-    content = response.content
+    content = response.content.lower()
+    victim_msg = (state["victim_message"] or "").lower()
     
-    # Parse the response
+    # === SIMPLE DETERMINISTIC PATIENCE DECAY ===
+    # Patience decreases every turn, with stronger decay for stalling patterns
+    
+    patience_delta = -0.15  # Base decay per turn
     persuasion_delta = 0.0
-    patience_delta = 0.0
     extracted = state["extracted_sensitive"]
     is_stalling = False
     
-    # Extract persuasion delta
-    delta_match = re.search(r"PERSUASION_DELTA:\s*([-\d.]+)", content)
-    if delta_match:
-        try:
-            persuasion_delta = float(delta_match.group(1))
-            persuasion_delta = max(-0.2, min(0.2, persuasion_delta))
-        except ValueError:
-            pass
+    # Detect stalling patterns (stronger patience decay)
+    stalling_keywords = [
+        "what", "repeat", "can't hear", "speak up", "hold on", "wait",
+        "bathroom", "doorbell", "cat", "let me", "confused", "don't understand",
+        "my glasses", "hearing aid", "static"
+    ]
     
-    # Extract patience delta
-    patience_match = re.search(r"PATIENCE_DELTA:\s*([-\d.]+)", content)
-    if patience_match:
-        try:
-            patience_delta = float(patience_match.group(1))
-            patience_delta = max(-0.3, min(0.1, patience_delta))
-        except ValueError:
-            pass
-    
-    # Extract sensitive info flag
-    if "EXTRACTED_SENSITIVE: true" in content.lower():
-        extracted = True
-    
-    # Extract stalling flag
-    if "IS_STALLING: true" in content.lower():
+    if any(keyword in victim_msg for keyword in stalling_keywords):
+        patience_delta = -0.25  # Stronger decay for obvious stalling
         is_stalling = True
     
+    # Check if victim showed compliance (patience stays higher)
+    compliance_keywords = ["okay", "yes", "sure", "understand", "i'll", "my social"]
+    if any(keyword in victim_msg for keyword in compliance_keywords):
+        patience_delta = -0.05  # Minimal decay if making progress
+        persuasion_delta = 0.1
+    
+    # Check for sensitive info extraction
+    if any(pattern in victim_msg for pattern in ["social security", "ssn", "account number", "routing"]):
+        extracted = True
+        patience_delta = 0.0  # No decay if getting info
+        persuasion_delta = 0.15
+    
+    # Apply deltas
     new_persuasion = max(0.0, min(1.0, state["persuasion_level"] + persuasion_delta))
     new_patience = max(0.0, min(1.0, state["patience"] + patience_delta))
     
     # Update frustration counter
     new_frustration = state["frustration_turns"]
-    if is_stalling or patience_delta < -0.1:
+    if is_stalling:
         new_frustration += 1
     else:
-        new_frustration = 0  # Reset on progress
+        new_frustration = max(0, new_frustration - 1)  # Decrease if not stalling
     
     # Determine if scammer should give up
-    # Give up if: patience < 0.2 OR 4+ consecutive stalling turns
-    gave_up = new_patience < 0.2 or new_frustration >= 4
+    # Give up if: patience < 0.25 OR 3+ consecutive stalling turns
+    gave_up = new_patience < 0.25 or new_frustration >= 3
     
     return {
         "persuasion_level": new_persuasion,
@@ -235,7 +239,7 @@ def get_initial_scammer_state() -> ScammerState:
         persuasion_stage="building_trust",
         persuasion_level=0.0,
         extracted_sensitive=False,
-        patience=1.0,
+        patience=0.8,  # Start with less patience (was 1.0)
         frustration_turns=0,
         gave_up=False,
         give_up_message="",
