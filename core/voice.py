@@ -298,7 +298,8 @@ def speech_to_text(
         )
         response.raise_for_status()
         result = response.json()
-        return result.get("text", "").strip()
+        # API returns 'transcription' not 'text'
+        return result.get("transcription", result.get("text", "")).strip()
     except Exception as e:
         print(f"⚠️  STT failed: {e}")
         return None
@@ -355,7 +356,7 @@ def record_audio_from_mic(
 
 
 def record_until_silence(
-    silence_threshold: float = 0.01,
+    silence_threshold: float = 0.005,  # Lowered for better silence detection
     silence_duration: float = 1.5,
     max_duration: float = 30.0,
     sample_rate: int = 16000,
