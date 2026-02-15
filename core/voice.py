@@ -175,8 +175,8 @@ def is_voice_enabled() -> bool:
 
 
 # Voice presets for the agents
-SCAMMER_VOICE = "eleanor"  # Male voice for scammer
-SENIOR_VOICE = "albus"  # Female voice for senior (old-age, narrative)
+SCAMMER_VOICE = "rachel"  # Female voice for scammer
+SENIOR_VOICE = "albus"  # Male voice for senior (old-age, narrative)
 
 
 def play_audio(audio_bytes: bytes) -> bool:
